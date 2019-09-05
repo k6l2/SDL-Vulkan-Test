@@ -10,8 +10,9 @@ namespace k10
 	class RenderWindow
 	{
 	public:
-		static RenderWindow* createRenderWindow(char const* title);
-		static void destroyRenderWindow(RenderWindow* rw);
+		static const GfxPipelineIndex MAX_PIPELINES = 50;
+		static RenderWindow* createRenderWindow(char const* title, 
+			int initialWidth, int initialHeight);
 	private:
 		static const int MAX_FRAMES_IN_FLIGHT;
 		struct SwapChainSupportDetails
@@ -47,18 +48,26 @@ namespace k10
 			VkPhysicalDevice pd, vector<char const*>const& requiredExtensionNames);
 	public:
 		~RenderWindow();
-		bool recordCommandBuffers(GfxPipeline const*const pipeline);
+		bool recordCommandBuffers(GfxPipelineIndex gpi);
 		bool drawFrame();
 		void waitForOperationsToFinish();
+		void onResized();
 		// GfxPipeline interface //
-		GfxPipeline* createGfxPipeline(GfxProgram const* vertProgram, 
-									   GfxProgram const* fragProgram);
+		GfxPipelineIndex createGfxPipeline(GfxProgram const* vertProgram,
+										   GfxProgram const* fragProgram);
 		// //////////////////////////////// end GfxPipeline interface //
 		// GfxProgram interface //
 		GfxProgram* createGfxProgram(GfxProgram::ShaderType st);
 ///		VkDevice getDevice() const;
 		// /////////////////////////////// end GfxProgram interface //
 	private:
+		void cleanupSwapChain();
+		bool rebuildSwapChain();
+		bool createSwapChain();
+		bool createImageViews();
+		bool createRenderPass();
+		bool createFramebuffers();
+		bool createCommandBuffers();
 		QueueFamilyIndices findQueueFamilies(VkPhysicalDevice pd) const;
 		SwapChainSupportDetails querySwapChainSupport(VkPhysicalDevice pd) const;
 		VkExtent2D chooseSwapExtent(
@@ -67,9 +76,10 @@ namespace k10
 			vector<VkPresentModeKHR>const& presentModes) const;
 		VkSurfaceFormatKHR chooseSwapSurfaceFormat(
 			vector<VkSurfaceFormatKHR>const& formats) const;
+		GfxPipeline* findGfxPipeline(GfxPipelineIndex gpi);
 	private:
 		SDL_Window* window = nullptr;
-		glm::u16vec2 windowSize = { 1280,720 };
+		bool windowResized = false;
 		VkInstance instance;
 		VkSurfaceKHR surface;
 		VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
@@ -89,6 +99,9 @@ namespace k10
 		vector<VkSemaphore> renderFinishedSemaphores;
 		vector<VkFence> frameFences;
 		size_t currentFrame = 0;
+		GfxPipelineIndex nextGpi = 0;
+		vector<GfxPipeline> gfxPipelines;
+		GfxPipelineIndex gpiRecordedCommandBuffer;
 #ifdef K10_ENABLE_VULKAN_VALIDATION_LAYERS
 		VkDebugUtilsMessengerEXT debugMessenger;
 #endif

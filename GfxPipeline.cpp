@@ -1,17 +1,24 @@
 #include "GfxPipeline.h"
 #include "RenderWindow.h"
-k10::GfxPipeline::GfxPipeline(VkDevice d)
-	: device(d)
-{
-}
-k10::GfxPipeline::~GfxPipeline()
+void k10::GfxPipeline::destroy(VkDevice device)
 {
 	vkDestroyPipeline(device, pipeline, nullptr);
 	vkDestroyPipelineLayout(device, pipelineLayout, nullptr);
 }
-bool k10::GfxPipeline::createPipelineLayout(
+bool k10::GfxPipeline::createPipeline(
+	GfxPipelineIndex gpi, 
+	VkDevice device,
 	VkExtent2D swapChainExtent,
 	vector<VkPipelineShaderStageCreateInfo> const& shaderStages,
+	VkRenderPass renderPass)
+{
+	this->gpi = gpi;
+	shaderStageCreateInfoCache = shaderStages;
+	return buildPipelineFromCache(device, swapChainExtent, renderPass);
+}
+bool k10::GfxPipeline::buildPipelineFromCache(
+	VkDevice device,
+	VkExtent2D swapChainExtent,
 	VkRenderPass renderPass)
 {
 	VkViewport viewport = {
@@ -125,8 +132,8 @@ bool k10::GfxPipeline::createPipelineLayout(
 		VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO,
 		nullptr,// pNext
 		0,// flags
-		static_cast<uint32_t>(shaderStages.size()),
-		shaderStages.data(),
+		static_cast<uint32_t>(shaderStageCreateInfoCache.size()),
+		shaderStageCreateInfoCache.data(),
 		&vertexInputStateCreateInfo,
 		&inputAssemblyStateCreateInfo,
 		nullptr,// tessellation state
@@ -158,4 +165,8 @@ bool k10::GfxPipeline::createPipelineLayout(
 VkPipeline k10::GfxPipeline::getPipeline() const
 {
 	return pipeline;
+}
+k10::GfxPipelineIndex k10::GfxPipeline::getGpi() const
+{
+	return gpi;
 }

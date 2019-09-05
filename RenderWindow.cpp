@@ -5,14 +5,15 @@ bool k10::RenderWindow::QueueFamilyIndices::isSuitable() const
 	return graphicsFamily != std::numeric_limits<uint64_t>::max() &&
 		   presentFamily  != std::numeric_limits<uint64_t>::max();
 }
-k10::RenderWindow* k10::RenderWindow::createRenderWindow(char const* title)
+k10::RenderWindow* k10::RenderWindow::createRenderWindow(
+	char const* title, int initialWidth, int initialHeight)
 {
 	RenderWindow* retVal = new RenderWindow;
 	// Create the SDL Window //
 	retVal->window = SDL_CreateWindow(title,
 									  SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-									  retVal->windowSize.x, retVal->windowSize.y,
-									  SDL_WINDOW_VULKAN);
+									  initialWidth, initialHeight,
+									  SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
 	if (!retVal->window)
 	{
 		SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
@@ -355,194 +356,25 @@ k10::RenderWindow* k10::RenderWindow::createRenderWindow(char const* title)
 						 static_cast<uint32_t>(qfi.presentFamily), 
 						 0, &retVal->presentQueue);
 	}
-	// Create Vulkan Swap Chain //
+	if (!retVal->createSwapChain())
 	{
-		SwapChainSupportDetails swapChainSupport = 
-			retVal->querySwapChainSupport(retVal->physicalDevice);
-		VkSurfaceFormatKHR surfaceFormat = retVal->chooseSwapSurfaceFormat(swapChainSupport.formats);
-		VkPresentModeKHR presentMode     = retVal->chooseSwapPresentMode(swapChainSupport.presentModes);
-		VkExtent2D extent                = retVal->chooseSwapExtent(swapChainSupport.capabilities);
-		uint32_t imageCountMin = swapChainSupport.capabilities.minImageCount + 1;
-		if (swapChainSupport.capabilities.maxImageCount > 0 &&
-			imageCountMin > swapChainSupport.capabilities.maxImageCount)
-		{
-			imageCountMin = swapChainSupport.capabilities.maxImageCount;
-		}
-		QueueFamilyIndices queueFamilyIndices = 
-			retVal->findQueueFamilies(retVal->physicalDevice);
-		vector<uint32_t> qfiVec = queueFamilyIndices.toVkVector();
-		VkSharingMode imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		uint32_t queueFamilyIndexCount = 0;
-		uint32_t const* pQueueFamilyIndices = nullptr;
-		if (queueFamilyIndices.graphicsFamily != queueFamilyIndices.presentFamily)
-		{
-			imageSharingMode = VK_SHARING_MODE_CONCURRENT;
-			queueFamilyIndexCount = 2;
-			pQueueFamilyIndices = qfiVec.data();
-		}
-		VkSwapchainCreateInfoKHR createInfo{
-			VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
-			nullptr,// pNext
-			0,// flags
-			retVal->surface,
-			imageCountMin,
-			surfaceFormat.format,
-			surfaceFormat.colorSpace,
-			extent,
-			1,// imageArrayLayers, always 1 unless we're doing stereoscopic 3D
-			VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
-			imageSharingMode,
-			queueFamilyIndexCount,
-			pQueueFamilyIndices,
-			swapChainSupport.capabilities.currentTransform,
-			VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
-			presentMode,
-			VK_TRUE,// clipped means we don't care about the window's obscured pixels
-			VK_NULL_HANDLE // old swap chain (only used when resizing window etc...)
-		};
-		if (vkCreateSwapchainKHR(retVal->device, &createInfo, 
-								 nullptr, &retVal->swapChain) != VK_SUCCESS)
-		{
-			SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
-				"Failed to create Vulkan swapchain!\n");
-			delete retVal;
-			return nullptr;
-		}
-		uint32_t swapChainImgCount;
-		vkGetSwapchainImagesKHR(retVal->device, retVal->swapChain, 
-								&swapChainImgCount, nullptr);
-		retVal->swapChainImages.resize(swapChainImgCount);
-		vkGetSwapchainImagesKHR(retVal->device, retVal->swapChain, 
-								&swapChainImgCount, retVal->swapChainImages.data());
-		retVal->swapChainFormat = surfaceFormat.format;
-		retVal->swapChainExtent = extent;
+		delete retVal;
+		return nullptr;
 	}
-	// Create swap chain image views //
+	if(!retVal->createImageViews())
 	{
-		retVal->swapChainImageViews.resize(retVal->swapChainImages.size());
-		for (size_t i = 0; i < retVal->swapChainImageViews.size(); i++)
-		{
-			VkComponentMapping componentMapping = {
-				VK_COMPONENT_SWIZZLE_IDENTITY,// r
-				VK_COMPONENT_SWIZZLE_IDENTITY,// g
-				VK_COMPONENT_SWIZZLE_IDENTITY,// b
-				VK_COMPONENT_SWIZZLE_IDENTITY // a
-			};
-			VkImageSubresourceRange subresourceRange = {
-				VK_IMAGE_ASPECT_COLOR_BIT,
-				0,// baseMipLevel
-				1,// levelCount
-				0,// baseArrayLayer
-				1 // layerCount
-			};
-			VkImageViewCreateInfo createInfo = {
-				VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
-				nullptr,// pNext
-				0,// flags
-				retVal->swapChainImages[i],
-				VK_IMAGE_VIEW_TYPE_2D,
-				retVal->swapChainFormat,
-				componentMapping,
-				subresourceRange
-			};
-			if (vkCreateImageView(retVal->device, &createInfo, nullptr,
-								  &retVal->swapChainImageViews[i]) != VK_SUCCESS)
-			{
-				SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
-					"Failed to create Vulkan swapchain image view!\n");
-				delete retVal;
-				return nullptr;
-			}
-		}
+		delete retVal;
+		return nullptr;
 	}
-	// Create render pass //
+	if(!retVal->createRenderPass())
 	{
-		VkAttachmentDescription colorAttachment = {
-			0,// flags
-			retVal->swapChainFormat,
-			VK_SAMPLE_COUNT_1_BIT,
-			VK_ATTACHMENT_LOAD_OP_CLEAR,
-			VK_ATTACHMENT_STORE_OP_STORE,
-			VK_ATTACHMENT_LOAD_OP_DONT_CARE,// stencil
-			VK_ATTACHMENT_STORE_OP_DONT_CARE,// stencil
-			VK_IMAGE_LAYOUT_UNDEFINED,// initial layout
-			VK_IMAGE_LAYOUT_PRESENT_SRC_KHR // final layout
-		};
-		VkAttachmentReference colorAttachmentRef = {
-			0,// attachment
-			VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
-		};
-		VkSubpassDescription subpass = {
-			0,// flags
-			VK_PIPELINE_BIND_POINT_GRAPHICS,
-			0,// inputAttachmentCount
-			nullptr, // input attachments
-			1,// color attachment count
-			&colorAttachmentRef,
-			nullptr,// resolve attachments
-			nullptr,// depth stencil attachment
-			0,// preserve attachment count
-			nullptr // preserve attachments
-		};
-		VkSubpassDependency dependency = {
-			VK_SUBPASS_EXTERNAL,// src subpass
-			0,// dst subpass
-			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,// src stage mask
-			VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,// dst stage mask
-			0,// src access mask
-			VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
-				VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,// dst access mask
-			0 // flags
-		};
-		VkRenderPassCreateInfo renderPassCreateInfo = {
-			VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
-			nullptr,// pNext
-			0,// flags
-			1,// attachment count
-			&colorAttachment,
-			1,// subpass count
-			&subpass,
-			1,// dependency count
-			&dependency // dependencies
-		};
-		if(vkCreateRenderPass(retVal->device, 
-							  &renderPassCreateInfo, 
-							  nullptr,
-							  &retVal->renderPass) != VK_SUCCESS)
-		{
-			SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
-				"Failed to create Vulkan render pass!\n");
-			delete retVal;
-			return nullptr;
-		}
+		delete retVal;
+		return nullptr;
 	}
-	// Create framebuffers //
+	if(!retVal->createFramebuffers())
 	{
-		retVal->swapChainFramebuffers.resize(retVal->swapChainImageViews.size());
-		for (size_t f = 0; f < retVal->swapChainImageViews.size(); f++)
-		{
-			VkFramebufferCreateInfo createInfo = {
-				VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
-				nullptr,// pNext
-				0,// flags
-				retVal->renderPass,
-				1,// attachment count
-				&retVal->swapChainImageViews[f],
-				retVal->swapChainExtent.width,
-				retVal->swapChainExtent.height,
-				1 // layers
-			};
-			if (vkCreateFramebuffer(retVal->device,
-									&createInfo,
-									nullptr,
-									&retVal->swapChainFramebuffers[f]) != VK_SUCCESS)
-			{
-				SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
-					"Failed to create Vulkan framebuffer!\n");
-				delete retVal;
-				return nullptr;
-			}
-		}
+		delete retVal;
+		return nullptr;
 	}
 	// Create Vulkan command pool //
 	{
@@ -567,25 +399,10 @@ k10::RenderWindow* k10::RenderWindow::createRenderWindow(char const* title)
 			return nullptr;
 		}
 	}
-	// Create command buffers //
+	if(!retVal->createCommandBuffers())
 	{
-		retVal->commandBuffers.resize(retVal->swapChainFramebuffers.size());
-		VkCommandBufferAllocateInfo allocateInfo = {
-			VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
-			nullptr,// pNext
-			retVal->commandPool,
-			VK_COMMAND_BUFFER_LEVEL_PRIMARY,
-			static_cast<uint32_t>(retVal->commandBuffers.size())
-		};
-		if (vkAllocateCommandBuffers(retVal->device,
-									 &allocateInfo,
-									 retVal->commandBuffers.data()) != VK_SUCCESS)
-		{
-			SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
-				"Failed to allocate Vulkan command buffers!\n");
-			delete retVal;
-			return nullptr;
-		}
+		delete retVal;
+		return nullptr;
 	}
 	// create drawing synchronization tools //
 	{
@@ -708,6 +525,7 @@ bool k10::RenderWindow::checkPhysicalDeviceExtensionSupport(
 ///}
 k10::RenderWindow::~RenderWindow()
 {
+	cleanupSwapChain();
 	for (size_t f = 0; f < MAX_FRAMES_IN_FLIGHT; f++)
 	{
 		vkDestroySemaphore(device, renderFinishedSemaphores[f], nullptr);
@@ -715,16 +533,6 @@ k10::RenderWindow::~RenderWindow()
 		vkDestroyFence(device, frameFences[f], nullptr);
 	}
 	vkDestroyCommandPool(device, commandPool, nullptr);
-	for (VkFramebuffer fb : swapChainFramebuffers)
-	{
-		vkDestroyFramebuffer(device, fb, nullptr);
-	}
-	vkDestroyRenderPass(device, renderPass, nullptr);
-	for (VkImageView iv : swapChainImageViews)
-	{
-		vkDestroyImageView(device, iv, nullptr);
-	}
-	vkDestroySwapchainKHR(device, swapChain, nullptr);
 	vkDestroyDevice(device, nullptr);
 #ifdef K10_ENABLE_VULKAN_VALIDATION_LAYERS
 	PFN_vkDestroyDebugUtilsMessengerEXT destroyDebugUtilsMessengerEXT;
@@ -741,10 +549,15 @@ k10::RenderWindow::~RenderWindow()
 		SDL_assert(false);
 	}
 #endif
+	vkDestroySurfaceKHR(instance, surface, nullptr);
 	vkDestroyInstance(instance, nullptr);
+	SDL_DestroyWindow(window);
 }
-bool k10::RenderWindow::recordCommandBuffers(GfxPipeline const*const pipeline)
+bool k10::RenderWindow::recordCommandBuffers(GfxPipelineIndex gpi)
 {
+	gpiRecordedCommandBuffer = gpi;
+	GfxPipeline const*const pipeline = findGfxPipeline(gpi);
+	SDL_assert(pipeline);
 	for (size_t c = 0; c < commandBuffers.size(); c++)
 	{
 		VkCommandBufferBeginInfo beginInfo = {
@@ -794,15 +607,26 @@ bool k10::RenderWindow::recordCommandBuffers(GfxPipeline const*const pipeline)
 bool k10::RenderWindow::drawFrame()
 {
 	vkWaitForFences(device, 1, &frameFences[currentFrame], VK_TRUE, UINT64_MAX);
-	vkResetFences(device, 1, &frameFences[currentFrame]);
 	// aquire the next image in the swapchain //
 	uint32_t imageIndex;
-	vkAcquireNextImageKHR(device, 
-						  swapChain, 
-						  UINT64_MAX, 
-						  imageAvailableSemaphores[currentFrame],
-						  VK_NULL_HANDLE, 
-						  &imageIndex);
+	const VkResult resultAcquireNextImage =
+		vkAcquireNextImageKHR(device, 
+							  swapChain, 
+							  UINT64_MAX, 
+							  imageAvailableSemaphores[currentFrame],
+							  VK_NULL_HANDLE, 
+							  &imageIndex);
+	if (resultAcquireNextImage == VK_ERROR_OUT_OF_DATE_KHR)
+	{
+		return rebuildSwapChain();
+	}
+	else if (resultAcquireNextImage != VK_SUCCESS && 
+			 resultAcquireNextImage != VK_SUBOPTIMAL_KHR)
+	{
+		SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
+			"Failed acquire next image!\n");
+		return false;
+	}
 	// submit command buffers to operate on this image //
 	VkSemaphore waitSemaphores[]   = { imageAvailableSemaphores[currentFrame] };
 	VkSemaphore signalSemaphores[] = { renderFinishedSemaphores[currentFrame] };
@@ -819,6 +643,7 @@ bool k10::RenderWindow::drawFrame()
 		1,// signal semaphore count
 		signalSemaphores
 	};
+	vkResetFences(device, 1, &frameFences[currentFrame]);
 	if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, frameFences[currentFrame]) != VK_SUCCESS)
 	{
 		SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
@@ -836,7 +661,25 @@ bool k10::RenderWindow::drawFrame()
 		&imageIndex,
 		nullptr // array of VkResults
 	};
-	vkQueuePresentKHR(presentQueue, &presentInfo);
+	const VkResult resultQueuePresent =
+		vkQueuePresentKHR(presentQueue, &presentInfo);
+	if (resultQueuePresent == VK_ERROR_OUT_OF_DATE_KHR || 
+		resultQueuePresent == VK_SUBOPTIMAL_KHR ||
+		windowResized)
+	{
+		if (!rebuildSwapChain())
+		{
+			SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
+				"Failed to rebuild swap chain!\n");
+			return false;
+		}
+	}
+	else if(resultQueuePresent != VK_SUCCESS)
+	{
+		SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
+			"Failed to present swap chain image!\n");
+		return false;
+	}
 	currentFrame = (currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
 	return true;
 }
@@ -844,19 +687,33 @@ void k10::RenderWindow::waitForOperationsToFinish()
 {
 	vkDeviceWaitIdle(device);
 }
-k10::GfxPipeline* k10::RenderWindow::createGfxPipeline(
+void k10::RenderWindow::onResized()
+{
+	windowResized = true;
+}
+k10::GfxPipelineIndex k10::RenderWindow::createGfxPipeline(
 	GfxProgram const* vertProgram, GfxProgram const* fragProgram)
 {
-	GfxPipeline* retVal = new GfxPipeline(device);
+	if (gfxPipelines.size() >= MAX_PIPELINES)
+	{
+		return MAX_PIPELINES;
+	}
+	GfxPipeline newPipeline;
 	vector<VkPipelineShaderStageCreateInfo> shaderStages = {
 		vertProgram->getPipelineShaderStageCreateInfo(),
 		fragProgram->getPipelineShaderStageCreateInfo() };
-	if (!retVal->createPipelineLayout(swapChainExtent, shaderStages, renderPass))
+	if (!newPipeline.createPipeline(
+			nextGpi, device, swapChainExtent, shaderStages, renderPass))
 	{
-		delete retVal;
-		return nullptr;
+		return MAX_PIPELINES;
 	}
-	return retVal;
+	do
+	{
+		nextGpi = (nextGpi + 1) % MAX_PIPELINES;
+	} while (findGfxPipeline(nextGpi) != nullptr && 
+			 gfxPipelines.size() < MAX_PIPELINES);
+	gfxPipelines.push_back(newPipeline);
+	return newPipeline.getGpi();
 }
 k10::GfxProgram* k10::RenderWindow::createGfxProgram(GfxProgram::ShaderType st)
 {
@@ -866,6 +723,278 @@ k10::GfxProgram* k10::RenderWindow::createGfxProgram(GfxProgram::ShaderType st)
 ///{
 ///	return device;
 ///}
+void k10::RenderWindow::cleanupSwapChain()
+{
+	for (VkFramebuffer fb : swapChainFramebuffers)
+	{
+		vkDestroyFramebuffer(device, fb, nullptr);
+	}
+	for (GfxPipeline p : gfxPipelines)
+	{
+		p.destroy(device);
+	}
+	vkFreeCommandBuffers(device, commandPool,
+		static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
+	vkDestroyRenderPass(device, renderPass, nullptr);
+	for (VkImageView iv : swapChainImageViews)
+	{
+		vkDestroyImageView(device, iv, nullptr);
+	}
+	vkDestroySwapchainKHR(device, swapChain, nullptr);
+}
+bool k10::RenderWindow::rebuildSwapChain()
+{
+	windowResized = false;
+	vkDeviceWaitIdle(device);
+	cleanupSwapChain();
+	if (!createSwapChain())
+	{
+		return false;
+	}
+	if (!createImageViews())
+	{
+		return false;
+	}
+	if (!createRenderPass())
+	{
+		return false;
+	}
+	if (!createFramebuffers())
+	{
+		return false;
+	}
+	if (!createCommandBuffers())
+	{
+		return false;
+	}
+	// rebuild gfx pipelines //
+	{
+		for (GfxPipeline& p : gfxPipelines)
+		{
+			if (!p.buildPipelineFromCache(device, swapChainExtent, renderPass))
+			{
+				return false;
+			}
+		}
+	}
+	// re-record command buffers //
+	{
+		if (!recordCommandBuffers(gpiRecordedCommandBuffer))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+bool k10::RenderWindow::createSwapChain()
+{
+	SwapChainSupportDetails swapChainSupport = 
+		querySwapChainSupport(physicalDevice);
+	VkSurfaceFormatKHR surfaceFormat = chooseSwapSurfaceFormat(swapChainSupport.formats);
+	VkPresentModeKHR presentMode     = chooseSwapPresentMode(swapChainSupport.presentModes);
+	VkExtent2D extent                = chooseSwapExtent(swapChainSupport.capabilities);
+	uint32_t imageCountMin = swapChainSupport.capabilities.minImageCount + 1;
+	if (swapChainSupport.capabilities.maxImageCount > 0 &&
+		imageCountMin > swapChainSupport.capabilities.maxImageCount)
+	{
+		imageCountMin = swapChainSupport.capabilities.maxImageCount;
+	}
+	QueueFamilyIndices queueFamilyIndices = 
+		findQueueFamilies(physicalDevice);
+	vector<uint32_t> qfiVec = queueFamilyIndices.toVkVector();
+	VkSharingMode imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
+	uint32_t queueFamilyIndexCount = 0;
+	uint32_t const* pQueueFamilyIndices = nullptr;
+	if (queueFamilyIndices.graphicsFamily != queueFamilyIndices.presentFamily)
+	{
+		imageSharingMode = VK_SHARING_MODE_CONCURRENT;
+		queueFamilyIndexCount = 2;
+		pQueueFamilyIndices = qfiVec.data();
+	}
+	VkSwapchainCreateInfoKHR createInfo{
+		VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR,
+		nullptr,// pNext
+		0,// flags
+		surface,
+		imageCountMin,
+		surfaceFormat.format,
+		surfaceFormat.colorSpace,
+		extent,
+		1,// imageArrayLayers, always 1 unless we're doing stereoscopic 3D
+		VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT,
+		imageSharingMode,
+		queueFamilyIndexCount,
+		pQueueFamilyIndices,
+		swapChainSupport.capabilities.currentTransform,
+		VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
+		presentMode,
+		VK_TRUE,// clipped means we don't care about the window's obscured pixels
+		VK_NULL_HANDLE // old swap chain (only used when resizing window etc...)
+	};
+	if (vkCreateSwapchainKHR(device, &createInfo, 
+							 nullptr, &swapChain) != VK_SUCCESS)
+	{
+		SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
+			"Failed to create Vulkan swapchain!\n");
+		return false;
+	}
+	uint32_t swapChainImgCount;
+	vkGetSwapchainImagesKHR(device, swapChain, 
+							&swapChainImgCount, nullptr);
+	swapChainImages.resize(swapChainImgCount);
+	vkGetSwapchainImagesKHR(device, swapChain, 
+							&swapChainImgCount, swapChainImages.data());
+	swapChainFormat = surfaceFormat.format;
+	swapChainExtent = extent;
+	return true;
+}
+bool k10::RenderWindow::createImageViews()
+{
+	swapChainImageViews.resize(swapChainImages.size());
+	for (size_t i = 0; i < swapChainImageViews.size(); i++)
+	{
+		VkComponentMapping componentMapping = {
+			VK_COMPONENT_SWIZZLE_IDENTITY,// r
+			VK_COMPONENT_SWIZZLE_IDENTITY,// g
+			VK_COMPONENT_SWIZZLE_IDENTITY,// b
+			VK_COMPONENT_SWIZZLE_IDENTITY // a
+		};
+		VkImageSubresourceRange subresourceRange = {
+			VK_IMAGE_ASPECT_COLOR_BIT,
+			0,// baseMipLevel
+			1,// levelCount
+			0,// baseArrayLayer
+			1 // layerCount
+		};
+		VkImageViewCreateInfo createInfo = {
+			VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+			nullptr,// pNext
+			0,// flags
+			swapChainImages[i],
+			VK_IMAGE_VIEW_TYPE_2D,
+			swapChainFormat,
+			componentMapping,
+			subresourceRange
+		};
+		if (vkCreateImageView(device, &createInfo, nullptr,
+							  &swapChainImageViews[i]) != VK_SUCCESS)
+		{
+			SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
+				"Failed to create Vulkan swapchain image view!\n");
+			return false;
+		}
+	}
+	return true;
+}
+bool k10::RenderWindow::createRenderPass()
+{
+	VkAttachmentDescription colorAttachment = {
+		0,// flags
+		swapChainFormat,
+		VK_SAMPLE_COUNT_1_BIT,
+		VK_ATTACHMENT_LOAD_OP_CLEAR,
+		VK_ATTACHMENT_STORE_OP_STORE,
+		VK_ATTACHMENT_LOAD_OP_DONT_CARE,// stencil
+		VK_ATTACHMENT_STORE_OP_DONT_CARE,// stencil
+		VK_IMAGE_LAYOUT_UNDEFINED,// initial layout
+		VK_IMAGE_LAYOUT_PRESENT_SRC_KHR // final layout
+	};
+	VkAttachmentReference colorAttachmentRef = {
+		0,// attachment
+		VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL
+	};
+	VkSubpassDescription subpass = {
+		0,// flags
+		VK_PIPELINE_BIND_POINT_GRAPHICS,
+		0,// inputAttachmentCount
+		nullptr, // input attachments
+		1,// color attachment count
+		&colorAttachmentRef,
+		nullptr,// resolve attachments
+		nullptr,// depth stencil attachment
+		0,// preserve attachment count
+		nullptr // preserve attachments
+	};
+	VkSubpassDependency dependency = {
+		VK_SUBPASS_EXTERNAL,// src subpass
+		0,// dst subpass
+		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,// src stage mask
+		VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,// dst stage mask
+		0,// src access mask
+		VK_ACCESS_COLOR_ATTACHMENT_READ_BIT |
+			VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,// dst access mask
+		0 // flags
+	};
+	VkRenderPassCreateInfo renderPassCreateInfo = {
+		VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO,
+		nullptr,// pNext
+		0,// flags
+		1,// attachment count
+		&colorAttachment,
+		1,// subpass count
+		&subpass,
+		1,// dependency count
+		&dependency // dependencies
+	};
+	if(vkCreateRenderPass(device, 
+						  &renderPassCreateInfo, 
+						  nullptr,
+						  &renderPass) != VK_SUCCESS)
+	{
+		SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
+			"Failed to create Vulkan render pass!\n");
+		return false;
+	}
+	return true;
+}
+bool k10::RenderWindow::createFramebuffers()
+{
+	swapChainFramebuffers.resize(swapChainImageViews.size());
+	for (size_t f = 0; f < swapChainImageViews.size(); f++)
+	{
+		VkFramebufferCreateInfo createInfo = {
+			VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO,
+			nullptr,// pNext
+			0,// flags
+			renderPass,
+			1,// attachment count
+			&swapChainImageViews[f],
+			swapChainExtent.width,
+			swapChainExtent.height,
+			1 // layers
+		};
+		if (vkCreateFramebuffer(device,
+								&createInfo,
+								nullptr,
+								&swapChainFramebuffers[f]) != VK_SUCCESS)
+		{
+			SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
+				"Failed to create Vulkan framebuffer!\n");
+			return false;
+		}
+	}
+	return true;
+}
+bool k10::RenderWindow::createCommandBuffers()
+{
+	commandBuffers.resize(swapChainFramebuffers.size());
+	VkCommandBufferAllocateInfo allocateInfo = {
+		VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+		nullptr,// pNext
+		commandPool,
+		VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+		static_cast<uint32_t>(commandBuffers.size())
+	};
+	if (vkAllocateCommandBuffers(device,
+								 &allocateInfo,
+								 commandBuffers.data()) != VK_SUCCESS)
+	{
+		SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
+			"Failed to allocate Vulkan command buffers!\n");
+		return false;
+	}
+	return true;
+}
 k10::RenderWindow::QueueFamilyIndices k10::RenderWindow::findQueueFamilies(VkPhysicalDevice pd) const
 {
 	QueueFamilyIndices retVal;
@@ -935,10 +1064,12 @@ VkExtent2D k10::RenderWindow::chooseSwapExtent(
 	{
 		return c.currentExtent;
 	}
+	int w, h;
+	SDL_Vulkan_GetDrawableSize(window, &w, &h);
 	return VkExtent2D{ 
-		clamp(static_cast<uint32_t>(windowSize.x), 
+		clamp(static_cast<uint32_t>(w), 
 			  c.minImageExtent.width, c.maxImageExtent.width),
-		clamp(static_cast<uint32_t>(windowSize.y),
+		clamp(static_cast<uint32_t>(h),
 			  c.minImageExtent.height, c.maxImageExtent.height) };
 }
 VkPresentModeKHR k10::RenderWindow::chooseSwapPresentMode(
@@ -968,4 +1099,15 @@ VkSurfaceFormatKHR k10::RenderWindow::chooseSwapSurfaceFormat(
 		}
 	}
 	return formats[0];
+}
+k10::GfxPipeline* k10::RenderWindow::findGfxPipeline(GfxPipelineIndex gpi)
+{
+	for (GfxPipeline& gp : gfxPipelines)
+	{
+		if (gp.getGpi() == gpi)
+		{
+			return &gp;
+		}
+	}
+	return nullptr;
 }

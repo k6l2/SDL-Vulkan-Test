@@ -7,17 +7,12 @@
 k10::RenderWindow* renderWindow = nullptr;
 k10::GfxProgram* gProgVert = nullptr;
 k10::GfxProgram* gProgFrag = nullptr;
-k10::GfxPipeline* gPipeline = nullptr;
+k10::GfxPipelineIndex gGpi;
 void cleanup()
 {
 	if (renderWindow)
 	{
 		renderWindow->waitForOperationsToFinish();
-	}
-	if (gPipeline)
-	{
-		delete gPipeline;
-		gPipeline = nullptr;
 	}
 	if (gProgVert)
 	{
@@ -49,7 +44,7 @@ int main(int argc, char** argv)
 	SDL_LogSetPriority(SDL_LOG_CATEGORY_VIDEO, SDL_LOG_PRIORITY_DEBUG);
 	SDL_LogSetPriority(SDL_LOG_CATEGORY_ERROR, SDL_LOG_PRIORITY_DEBUG);
 #endif
-	renderWindow = k10::RenderWindow::createRenderWindow("SDL-Vulkan-Test");
+	renderWindow = k10::RenderWindow::createRenderWindow("SDL-Vulkan-Test", 1280, 720);
 	if (!renderWindow)
 	{
 		SDL_LogError(SDL_LOG_CATEGORY_ERROR, 
@@ -75,15 +70,15 @@ int main(int argc, char** argv)
 		cleanup();
 		return EXIT_FAILURE;
 	}
-	gPipeline = renderWindow->createGfxPipeline(gProgVert, gProgFrag);
-	if (!gPipeline)
+	gGpi = renderWindow->createGfxPipeline(gProgVert, gProgFrag);
+	if (gGpi == k10::RenderWindow::MAX_PIPELINES)
 	{
 		SDL_LogError(SDL_LOG_CATEGORY_ERROR,
 			"Failed to create gfx pipeline!\n");
 		cleanup();
 		return EXIT_FAILURE;
 	}
-	if (!renderWindow->recordCommandBuffers(gPipeline))
+	if (!renderWindow->recordCommandBuffers(gGpi))
 	{
 		SDL_LogError(SDL_LOG_CATEGORY_ERROR,
 			"Failed to record command buffers!\n");
@@ -96,6 +91,14 @@ int main(int argc, char** argv)
 		{
 			switch (event.type)
 			{
+			case SDL_EventType::SDL_WINDOWEVENT:
+				switch (event.window.windowID)
+				{
+				case SDL_WINDOWEVENT_RESIZED:
+					renderWindow->onResized();
+					break;
+				}
+				break;
 			case SDL_EventType::SDL_KEYDOWN:
 				switch (event.key.keysym.sym)
 				{
