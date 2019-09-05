@@ -51,7 +51,7 @@ namespace k10
 		bool recordCommandBuffers(GfxPipelineIndex gpi);
 		bool drawFrame();
 		void waitForOperationsToFinish();
-		void onResized();
+		void onWindowEvent(SDL_WindowEvent const& we);
 		// GfxPipeline interface //
 		GfxPipelineIndex createGfxPipeline(GfxProgram const* vertProgram,
 										   GfxProgram const* fragProgram);
@@ -80,6 +80,7 @@ namespace k10
 	private:
 		SDL_Window* window = nullptr;
 		bool windowResized = false;
+		bool windowMinimized = false;
 		VkInstance instance;
 		VkSurfaceKHR surface;
 		VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;

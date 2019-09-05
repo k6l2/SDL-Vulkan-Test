@@ -606,6 +606,10 @@ bool k10::RenderWindow::recordCommandBuffers(GfxPipelineIndex gpi)
 }
 bool k10::RenderWindow::drawFrame()
 {
+	if (windowMinimized)
+	{
+		return true;
+	}
 	vkWaitForFences(device, 1, &frameFences[currentFrame], VK_TRUE, UINT64_MAX);
 	// aquire the next image in the swapchain //
 	uint32_t imageIndex;
@@ -687,9 +691,32 @@ void k10::RenderWindow::waitForOperationsToFinish()
 {
 	vkDeviceWaitIdle(device);
 }
-void k10::RenderWindow::onResized()
+void k10::RenderWindow::onWindowEvent(SDL_WindowEvent const& we)
 {
-	windowResized = true;
+	switch (we.event)
+	{
+	case SDL_WINDOWEVENT_SHOWN:
+///		SDL_Log("window shown!\n");
+		break;
+	case SDL_WINDOWEVENT_HIDDEN:
+///		SDL_Log("window hidden!\n");
+		break;
+	case SDL_WINDOWEVENT_EXPOSED:
+///		SDL_Log("window exposed!\n");
+		break;
+	case SDL_WINDOWEVENT_MAXIMIZED:
+///		SDL_Log("window maximized!\n");
+		break;
+	case SDL_WINDOWEVENT_RESTORED:
+		windowMinimized = false;
+		break;
+	case SDL_WINDOWEVENT_RESIZED:
+		windowResized = true;
+		break;
+	case SDL_WINDOWEVENT_MINIMIZED:
+		windowMinimized = true;
+		break;
+	}
 }
 k10::GfxPipelineIndex k10::RenderWindow::createGfxPipeline(
 	GfxProgram const* vertProgram, GfxProgram const* fragProgram)
@@ -1062,6 +1089,10 @@ VkExtent2D k10::RenderWindow::chooseSwapExtent(
 	if (c.currentExtent.width != 
 			numeric_limits<decltype(c.currentExtent.width)>::max())
 	{
+///		if (c.currentExtent.width == 0)
+///		{
+///			SDL_Log("uh oh...\n");
+///		}
 		return c.currentExtent;
 	}
 	int w, h;

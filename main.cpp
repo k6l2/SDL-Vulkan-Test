@@ -92,12 +92,7 @@ int main(int argc, char** argv)
 			switch (event.type)
 			{
 			case SDL_EventType::SDL_WINDOWEVENT:
-				switch (event.window.windowID)
-				{
-				case SDL_WINDOWEVENT_RESIZED:
-					renderWindow->onResized();
-					break;
-				}
+				renderWindow->onWindowEvent(event.window);
 				break;
 			case SDL_EventType::SDL_KEYDOWN:
 				switch (event.key.keysym.sym)
