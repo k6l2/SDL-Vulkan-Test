@@ -46,10 +46,10 @@ bool k10::GfxPipeline::buildPipelineFromCache(
 		VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO,
 		nullptr,// pNext
 		0,// flags
-		0,// vertexBindingDescriptionCount
-		nullptr,// vertexBindingDescriptions
-		0,// vertexAttributeDescriptionCount
-		nullptr // vertexAttributeDescriptions
+		1,// vertexBindingDescriptionCount
+		&Vertex::bindingDescription,
+		static_cast<uint32_t>(Vertex::attributeDescriptions.size()),
+		Vertex::attributeDescriptions.data() // vertexAttributeDescriptions
 	};
 	VkPipelineInputAssemblyStateCreateInfo inputAssemblyStateCreateInfo = {
 		VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,

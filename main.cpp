@@ -56,14 +56,14 @@ int main(int argc, char** argv)
 	SDL_assert(gProgVert);
 	gProgFrag = renderWindow->createGfxProgram(k10::GfxProgram::ShaderType::FRAGMENT);
 	SDL_assert(gProgFrag);
-	if (!gProgVert->loadFromFile("shader-bin/simple-draw-tri-vert.spv"))
+	if (!gProgVert->loadFromFile("shader-bin/simple-draw-vert.spv"))
 	{
 		SDL_LogError(SDL_LOG_CATEGORY_ERROR,
 			"Failed to load vertex shader!\n");
 		cleanup();
 		return EXIT_FAILURE;
 	}
-	if (!gProgFrag->loadFromFile("shader-bin/simple-draw-tri-frag.spv"))
+	if (!gProgFrag->loadFromFile("shader-bin/simple-draw-frag.spv"))
 	{
 		SDL_LogError(SDL_LOG_CATEGORY_ERROR,
 			"Failed to load fragment shader!\n");

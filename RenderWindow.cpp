@@ -1,4 +1,19 @@
 #include "RenderWindow.h"
+const VkVertexInputBindingDescription k10::Vertex::bindingDescription = {
+	0,// binding
+	sizeof(Vertex),
+	VK_VERTEX_INPUT_RATE_VERTEX
+};
+const vector<VkVertexInputAttributeDescription> k10::Vertex::attributeDescriptions = {
+	{0,//location
+		0,//binding
+		VK_FORMAT_R32G32_SFLOAT,
+		offsetof(Vertex, position)},
+	{1,//location
+		0,//binding
+		VK_FORMAT_R32G32B32A32_SFLOAT,
+		offsetof(Vertex, color)}
+};
 const int k10::RenderWindow::MAX_FRAMES_IN_FLIGHT = 2;
 bool k10::RenderWindow::QueueFamilyIndices::isSuitable() const
 {
@@ -453,6 +468,69 @@ k10::RenderWindow* k10::RenderWindow::createRenderWindow(
 			}
 		}
 	}
+	// Create Vertex Buffer //
+	{
+		const vector<k10::Vertex> vertices = {
+			{{ 0.0f, -0.5f}, {1.f, 1.f, 1.f, 1.f}},
+			{{ 0.5f,  0.5f}, {0.f, 1.f, 0.f, 1.f}},
+			{{-0.5f,  0.5f}, {0.f, 0.f, 1.f, 1.f}}
+		};
+		retVal->vertexBufferCount = static_cast<uint32_t>(vertices.size());
+		VkBufferCreateInfo bufferInfo = {
+			VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+			nullptr,// pNext
+			0,// flags
+			sizeof(vertices[0])*vertices.size(),
+			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+			VK_SHARING_MODE_EXCLUSIVE,
+			0,// queue family index count
+			nullptr // queue family indices (unused if sharing mode is exclusive)
+		};
+		if (vkCreateBuffer(retVal->device, 
+						   &bufferInfo, 
+						   nullptr, 
+						   &retVal->vertexBuffer) != VK_SUCCESS)
+		{
+			SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
+				"Failed to create Vulkan vertex buffer!\n");
+			delete retVal;
+			return nullptr;
+		}
+		VkMemoryRequirements memRequirements;
+		vkGetBufferMemoryRequirements(retVal->device, retVal->vertexBuffer, &memRequirements);
+		const uint64_t memTypeIndex = retVal->findMemoryType(
+			memRequirements.memoryTypeBits,
+			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+				VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+		if (memTypeIndex == numeric_limits<uint64_t>::max())
+		{
+			SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
+				"Failed to find suitable memory type for vertex buffer!\n");
+			delete retVal;
+			return nullptr;
+		}
+		VkMemoryAllocateInfo allocInfo = {
+			VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+			nullptr,// pNext
+			memRequirements.size,
+			static_cast<uint32_t>(memTypeIndex)
+		};
+		if (vkAllocateMemory(retVal->device, 
+							 &allocInfo, 
+							 nullptr, 
+							 &retVal->vertexBufferMemory) != VK_SUCCESS)
+		{
+			SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
+				"Failed to allocate memory for vertex buffer!\n");
+			delete retVal;
+			return nullptr;
+		}
+		vkBindBufferMemory(retVal->device, retVal->vertexBuffer, retVal->vertexBufferMemory, 0);
+		void* data;
+		vkMapMemory(retVal->device, retVal->vertexBufferMemory, 0, bufferInfo.size, 0, &data);
+		memcpy(data, vertices.data(), static_cast<size_t>(bufferInfo.size));
+		vkUnmapMemory(retVal->device, retVal->vertexBufferMemory);
+	}
 	return retVal;
 }
 #ifdef K10_ENABLE_VULKAN_VALIDATION_LAYERS
@@ -526,6 +604,8 @@ bool k10::RenderWindow::checkPhysicalDeviceExtensionSupport(
 k10::RenderWindow::~RenderWindow()
 {
 	cleanupSwapChain();
+	vkDestroyBuffer(device, vertexBuffer, nullptr);
+	vkFreeMemory(device, vertexBufferMemory, nullptr);
 	for (size_t f = 0; f < MAX_FRAMES_IN_FLIGHT; f++)
 	{
 		vkDestroySemaphore(device, renderFinishedSemaphores[f], nullptr);
@@ -592,7 +672,10 @@ bool k10::RenderWindow::recordCommandBuffers(GfxPipelineIndex gpi)
 			vkCmdBindPipeline(commandBuffers[c],
 				VK_PIPELINE_BIND_POINT_GRAPHICS,
 				pipeline->getPipeline());
-			vkCmdDraw(commandBuffers[c], 3, 1, 0, 0);
+			VkBuffer vertexBuffers[] = { vertexBuffer };
+			VkDeviceSize vbOffsets[] = { 0 };
+			vkCmdBindVertexBuffers(commandBuffers[c], 0, 1, vertexBuffers, vbOffsets);
+			vkCmdDraw(commandBuffers[c], vertexBufferCount, 1, 0, 0);
 			vkCmdEndRenderPass(commandBuffers[c]);
 		}
 		if (vkEndCommandBuffer(commandBuffers[c]) != VK_SUCCESS)
@@ -1141,4 +1224,19 @@ k10::GfxPipeline* k10::RenderWindow::findGfxPipeline(GfxPipelineIndex gpi)
 		}
 	}
 	return nullptr;
+}
+uint64_t k10::RenderWindow::findMemoryType(
+	uint32_t typeFilter, VkMemoryPropertyFlags properties) const
+{
+	VkPhysicalDeviceMemoryProperties physicalMemProps;
+	vkGetPhysicalDeviceMemoryProperties(physicalDevice, &physicalMemProps);
+	for (uint32_t t = 0; t < physicalMemProps.memoryTypeCount; t++)
+	{
+		if ((typeFilter & (1 << t)) &&
+			(physicalMemProps.memoryTypes[t].propertyFlags & properties) == properties)
+		{
+			return t;
+		}
+	}
+	return numeric_limits<uint64_t>::max();
 }

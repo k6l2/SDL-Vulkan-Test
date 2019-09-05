@@ -7,6 +7,13 @@
 #include "GfxPipeline.h"
 namespace k10
 {
+	struct Vertex
+	{
+		static const VkVertexInputBindingDescription bindingDescription;
+		static const vector<VkVertexInputAttributeDescription> attributeDescriptions;
+		glm::vec2 position;
+		glm::vec4 color;
+	};
 	class RenderWindow
 	{
 	public:
@@ -77,6 +84,10 @@ namespace k10
 		VkSurfaceFormatKHR chooseSwapSurfaceFormat(
 			vector<VkSurfaceFormatKHR>const& formats) const;
 		GfxPipeline* findGfxPipeline(GfxPipelineIndex gpi);
+		// Returns a uint32_t that represents the index of the physicalDevice's
+		//	memory types that satisfies the params.
+		// Returns 'numeric_limits<uint64_t>::max()' on failure.
+		uint64_t findMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) const;
 	private:
 		SDL_Window* window = nullptr;
 		bool windowResized = false;
@@ -96,6 +107,9 @@ namespace k10
 		vector<VkFramebuffer> swapChainFramebuffers;
 		VkCommandPool commandPool;
 		vector<VkCommandBuffer> commandBuffers;
+		uint32_t vertexBufferCount;
+		VkBuffer vertexBuffer;
+		VkDeviceMemory vertexBufferMemory;
 		vector<VkSemaphore> imageAvailableSemaphores;
 		vector<VkSemaphore> renderFinishedSemaphores;
 		vector<VkFence> frameFences;
