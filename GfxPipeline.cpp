@@ -55,7 +55,6 @@ bool k10::GfxPipeline::buildPipelineFromCache(
 		VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO,
 		nullptr,// pNext
 		0,// flags
-		///TODO: change this to triangle strip to see what will happen:
 		VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST,
 		VK_FALSE // primitiveRestartEnable
 	};

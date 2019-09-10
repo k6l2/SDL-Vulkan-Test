@@ -11,6 +11,16 @@ using std::string;
 #include <limits>
 using std::numeric_limits;
 #include <glm/glm.hpp>
+#include <map>
+#include <unordered_map>
+#include <unordered_set>
+#include <chrono>
+namespace k10
+{
+	const int FIXED_FRAMES_PER_SECOND = 240;
+	const std::chrono::duration<double> FIXED_SECONDS_PER_FRAME =
+		std::chrono::duration<double>(1) / FIXED_FRAMES_PER_SECOND;
+}
 template<class T>
 inline T clamp(T value, T min, T max)
 {

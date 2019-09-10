@@ -5,15 +5,9 @@
 #endif
 #include "GfxProgram.h"
 #include "GfxPipeline.h"
+#include "QuadPool.h"
 namespace k10
 {
-	struct Vertex
-	{
-		static const VkVertexInputBindingDescription bindingDescription;
-		static const vector<VkVertexInputAttributeDescription> attributeDescriptions;
-		glm::vec2 position;
-		glm::vec4 color;
-	};
 	class RenderWindow
 	{
 	public:
@@ -59,6 +53,9 @@ namespace k10
 		bool drawFrame();
 		void waitForOperationsToFinish();
 		void onWindowEvent(SDL_WindowEvent const& we);
+		// Draw pooled gfx interface //
+		QuadPool& getQuadPool();
+		// ///////////////////////////////// end draw pooled gfx interface //
 		// GfxPipeline interface //
 		GfxPipelineIndex createGfxPipeline(GfxProgram const* vertProgram,
 										   GfxProgram const* fragProgram);
@@ -108,8 +105,7 @@ namespace k10
 		VkCommandPool commandPool;
 		vector<VkCommandBuffer> commandBuffers;
 		uint32_t vertexBufferCount;
-		VkBuffer vertexBuffer;
-		VkDeviceMemory vertexBufferMemory;
+		GfxBuffer vertexBuffer;
 		vector<VkSemaphore> imageAvailableSemaphores;
 		vector<VkSemaphore> renderFinishedSemaphores;
 		vector<VkFence> frameFences;
@@ -117,6 +113,7 @@ namespace k10
 		GfxPipelineIndex nextGpi = 0;
 		vector<GfxPipeline> gfxPipelines;
 		GfxPipelineIndex gpiRecordedCommandBuffer;
+		QuadPool quadPool;
 #ifdef K10_ENABLE_VULKAN_VALIDATION_LAYERS
 		VkDebugUtilsMessengerEXT debugMessenger;
 #endif

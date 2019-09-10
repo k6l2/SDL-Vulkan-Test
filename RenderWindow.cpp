@@ -1,19 +1,4 @@
 #include "RenderWindow.h"
-const VkVertexInputBindingDescription k10::Vertex::bindingDescription = {
-	0,// binding
-	sizeof(Vertex),
-	VK_VERTEX_INPUT_RATE_VERTEX
-};
-const vector<VkVertexInputAttributeDescription> k10::Vertex::attributeDescriptions = {
-	{0,//location
-		0,//binding
-		VK_FORMAT_R32G32_SFLOAT,
-		offsetof(Vertex, position)},
-	{1,//location
-		0,//binding
-		VK_FORMAT_R32G32B32A32_SFLOAT,
-		offsetof(Vertex, color)}
-};
 const int k10::RenderWindow::MAX_FRAMES_IN_FLIGHT = 2;
 bool k10::RenderWindow::QueueFamilyIndices::isSuitable() const
 {
@@ -421,12 +406,12 @@ k10::RenderWindow* k10::RenderWindow::createRenderWindow(
 	}
 	// create drawing synchronization tools //
 	{
-		VkSemaphoreCreateInfo semaphoreCreateInfo = {
+		const VkSemaphoreCreateInfo semaphoreCreateInfo = {
 			VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO,
 			nullptr,// pNext
 			0 // flags
 		};
-		VkFenceCreateInfo fenceCreateInfo = {
+		const VkFenceCreateInfo fenceCreateInfo = {
 			VK_STRUCTURE_TYPE_FENCE_CREATE_INFO,
 			nullptr,// pNext
 			VK_FENCE_CREATE_SIGNALED_BIT // flags
@@ -471,65 +456,38 @@ k10::RenderWindow* k10::RenderWindow::createRenderWindow(
 	// Create Vertex Buffer //
 	{
 		const vector<k10::Vertex> vertices = {
-			{{ 0.0f, -0.5f}, {1.f, 1.f, 1.f, 1.f}},
-			{{ 0.5f,  0.5f}, {0.f, 1.f, 0.f, 1.f}},
-			{{-0.5f,  0.5f}, {0.f, 0.f, 1.f, 1.f}}
+			{{-0.5f,  0.5f}, {1.f, 1.f, 0.f, 1.f}},
+			{{-0.5f, -0.5f}, {1.f, 0.f, 0.f, 1.f}},
+			{{ 0.5f,  0.5f}, {0.f, 0.f, 1.f, 1.f}},
+			{{ 0.5f, -0.5f}, {0.f, 1.f, 0.f, 1.f}}
 		};
 		retVal->vertexBufferCount = static_cast<uint32_t>(vertices.size());
-		VkBufferCreateInfo bufferInfo = {
-			VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-			nullptr,// pNext
-			0,// flags
-			sizeof(vertices[0])*vertices.size(),
-			VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-			VK_SHARING_MODE_EXCLUSIVE,
-			0,// queue family index count
-			nullptr // queue family indices (unused if sharing mode is exclusive)
-		};
-		if (vkCreateBuffer(retVal->device, 
-						   &bufferInfo, 
-						   nullptr, 
-						   &retVal->vertexBuffer) != VK_SUCCESS)
+		const VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
+		if (!retVal->vertexBuffer.createBuffer(retVal->device, 
+											   retVal->physicalDevice,
+											   bufferSize,
+											   VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
+											   VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | 
+													VK_MEMORY_PROPERTY_HOST_COHERENT_BIT))
 		{
 			SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
-				"Failed to create Vulkan vertex buffer!\n");
+				"Failed to create vertexBuffer!\n");
 			delete retVal;
 			return nullptr;
 		}
-		VkMemoryRequirements memRequirements;
-		vkGetBufferMemoryRequirements(retVal->device, retVal->vertexBuffer, &memRequirements);
-		const uint64_t memTypeIndex = retVal->findMemoryType(
-			memRequirements.memoryTypeBits,
-			VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
-				VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-		if (memTypeIndex == numeric_limits<uint64_t>::max())
-		{
-			SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
-				"Failed to find suitable memory type for vertex buffer!\n");
-			delete retVal;
-			return nullptr;
-		}
-		VkMemoryAllocateInfo allocInfo = {
-			VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-			nullptr,// pNext
-			memRequirements.size,
-			static_cast<uint32_t>(memTypeIndex)
-		};
-		if (vkAllocateMemory(retVal->device, 
-							 &allocInfo, 
-							 nullptr, 
-							 &retVal->vertexBufferMemory) != VK_SUCCESS)
-		{
-			SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
-				"Failed to allocate memory for vertex buffer!\n");
-			delete retVal;
-			return nullptr;
-		}
-		vkBindBufferMemory(retVal->device, retVal->vertexBuffer, retVal->vertexBufferMemory, 0);
-		void* data;
-		vkMapMemory(retVal->device, retVal->vertexBufferMemory, 0, bufferInfo.size, 0, &data);
-		memcpy(data, vertices.data(), static_cast<size_t>(bufferInfo.size));
-		vkUnmapMemory(retVal->device, retVal->vertexBufferMemory);
+		void* data = nullptr;
+		retVal->vertexBuffer.mapMemory(&data, 0, bufferSize);
+		memcpy(data, vertices.data(), static_cast<size_t>(bufferSize));
+		retVal->vertexBuffer.unmapMemory();
+	}
+	if (!retVal->quadPool.fillPool(retVal->device, retVal->physicalDevice,
+								   retVal->commandPool,
+								   static_cast<size_t>(1e6)))
+	{
+		SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
+			"Failed to fill quad pool!\n");
+		delete retVal;
+		return nullptr;
 	}
 	return retVal;
 }
@@ -603,9 +561,9 @@ bool k10::RenderWindow::checkPhysicalDeviceExtensionSupport(
 ///}
 k10::RenderWindow::~RenderWindow()
 {
+	quadPool.drainPool();
+	vertexBuffer.destroyBuffer();
 	cleanupSwapChain();
-	vkDestroyBuffer(device, vertexBuffer, nullptr);
-	vkFreeMemory(device, vertexBufferMemory, nullptr);
 	for (size_t f = 0; f < MAX_FRAMES_IN_FLIGHT; f++)
 	{
 		vkDestroySemaphore(device, renderFinishedSemaphores[f], nullptr);
@@ -635,6 +593,10 @@ k10::RenderWindow::~RenderWindow()
 }
 bool k10::RenderWindow::recordCommandBuffers(GfxPipelineIndex gpi)
 {
+	if (quadPool.flushRequired())
+	{
+		quadPool.flushVertexStaging(graphicsQueue);
+	}
 	gpiRecordedCommandBuffer = gpi;
 	GfxPipeline const*const pipeline = findGfxPipeline(gpi);
 	SDL_assert(pipeline);
@@ -672,10 +634,11 @@ bool k10::RenderWindow::recordCommandBuffers(GfxPipelineIndex gpi)
 			vkCmdBindPipeline(commandBuffers[c],
 				VK_PIPELINE_BIND_POINT_GRAPHICS,
 				pipeline->getPipeline());
-			VkBuffer vertexBuffers[] = { vertexBuffer };
-			VkDeviceSize vbOffsets[] = { 0 };
-			vkCmdBindVertexBuffers(commandBuffers[c], 0, 1, vertexBuffers, vbOffsets);
-			vkCmdDraw(commandBuffers[c], vertexBufferCount, 1, 0, 0);
+			quadPool.issueCommands(commandBuffers[c]);
+///			VkBuffer vertexBuffers[] = { vertexBuffer.getBuffer() };
+///			VkDeviceSize vbOffsets[] = { 0 };
+///			vkCmdBindVertexBuffers(commandBuffers[c], 0, 1, vertexBuffers, vbOffsets);
+///			vkCmdDraw(commandBuffers[c], vertexBufferCount, 1, 0, 0);
 			vkCmdEndRenderPass(commandBuffers[c]);
 		}
 		if (vkEndCommandBuffer(commandBuffers[c]) != VK_SUCCESS)
@@ -694,6 +657,23 @@ bool k10::RenderWindow::drawFrame()
 		return true;
 	}
 	vkWaitForFences(device, 1, &frameFences[currentFrame], VK_TRUE, UINT64_MAX);
+	if (quadPool.flushRequired())
+	{
+		vkFreeCommandBuffers(device, commandPool,
+			static_cast<uint32_t>(commandBuffers.size()), commandBuffers.data());
+		if (!createCommandBuffers())
+		{
+			SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
+				"Failed to re-create render pass command buffer!\n");
+			return false;
+		}
+		if (!recordCommandBuffers(gpiRecordedCommandBuffer))
+		{
+			SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
+				"Failed to re-record render pass command buffer!\n");
+			return false;
+		}
+	}
 	// aquire the next image in the swapchain //
 	uint32_t imageIndex;
 	const VkResult resultAcquireNextImage =
@@ -731,10 +711,30 @@ bool k10::RenderWindow::drawFrame()
 		signalSemaphores
 	};
 	vkResetFences(device, 1, &frameFences[currentFrame]);
-	if (vkQueueSubmit(graphicsQueue, 1, &submitInfo, frameFences[currentFrame]) != VK_SUCCESS)
+	const VkResult resultGfxSubmitQ =
+		vkQueueSubmit(graphicsQueue, 1, &submitInfo, frameFences[currentFrame]);
+	if (resultGfxSubmitQ != VK_SUCCESS)
 	{
-		SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
-			"Failed to submit draw command buffer!\n");
+		switch (resultGfxSubmitQ)
+		{
+		case VK_ERROR_DEVICE_LOST:
+			///TODO: figure out why this randomly procs w/ large quad pool populations? ????
+			SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
+				"Failed to submit draw command buffer! (device lost)\n");
+			break;
+		case VK_ERROR_OUT_OF_DEVICE_MEMORY:
+			SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
+				"Failed to submit draw command buffer! (out of device memory)\n");
+			break;
+		case VK_ERROR_OUT_OF_HOST_MEMORY:
+			SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
+				"Failed to submit draw command buffer! (out of host memory)\n");
+			break;
+		default:
+			SDL_LogError(SDL_LOG_CATEGORY_VIDEO,
+				"Failed to submit draw command buffer!\n");
+			break;
+		}
 		return false;
 	}
 	// present the next image in the swap chain //
@@ -800,6 +800,10 @@ void k10::RenderWindow::onWindowEvent(SDL_WindowEvent const& we)
 		windowMinimized = true;
 		break;
 	}
+}
+k10::QuadPool& k10::RenderWindow::getQuadPool()
+{
+	return quadPool;
 }
 k10::GfxPipelineIndex k10::RenderWindow::createGfxPipeline(
 	GfxProgram const* vertProgram, GfxProgram const* fragProgram)
